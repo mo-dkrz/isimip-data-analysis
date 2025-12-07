@@ -7,6 +7,8 @@ Supports:
 - Penman-Monteith (FAO-56): Full meteorological variables
 """
 
+import time as _time
+
 import numpy as np
 import xarray as xr
 
@@ -30,7 +32,13 @@ def calc_pet_thornthwaite(tas: xr.DataArray) -> xr.DataArray:
     xr.DataArray
         PET in mm/month
     """
-    tas = convert_temp_units(tas)
+    print("  Loading data into memory...")
+    _start = _time.time()
+    tas = convert_temp_units(tas).load()
+    print(f"    Done in {_time.time() - _start:.1f}s")
+
+    print("  Computing Thornthwaite PET...")
+    _start = _time.time()
 
     # Monthly mean temperature, clipped to positive
     tas_pos = tas.clip(min=0)
@@ -55,6 +63,8 @@ def calc_pet_thornthwaite(tas: xr.DataArray) -> xr.DataArray:
 
     # Set negative temps to 0 PET
     pet = pet.where(tas > 0, 0)
+
+    print(f"    Done in {_time.time() - _start:.1f}s")
 
     pet.attrs = {"units": "mm/month", "long_name": "Potential Evapotranspiration (Thornthwaite)"}
     return pet
@@ -84,29 +94,50 @@ def calc_pet_hargreaves(
     xr.DataArray
         PET in mm/day (aggregate to mm/month as needed)
     """
-    tasmin = convert_temp_units(tasmin)
-    tasmax = convert_temp_units(tasmax)
+    # Load data into memory first (SPI pattern)
+    print("  Loading data into memory...")
+    _start = _time.time()
+    tasmin = convert_temp_units(tasmin).load()
+    tasmax = convert_temp_units(tasmax).load()
+    print(f"    Done in {_time.time() - _start:.1f}s")
+
+    print("  Computing Hargreaves PET...")
+    _start = _time.time()
 
     if lat is None:
         lat = tasmin.lat
 
+    # Precompute Ra lookup table (366 days x n_lats) - MUCH faster
+    lat_vals = lat.values
+    Ra_lookup = _precompute_ra_lookup(lat_vals)
+    
+    # Get Ra for each timestep using lookup
+    doy = tasmin.time.dt.dayofyear.values
+    Ra = Ra_lookup[doy - 1, :]  # Shape: (n_times, n_lats)
+    
+    # Broadcast to full grid (n_times, n_lats, n_lons)
+    n_lons = len(tasmin.lon)
+    Ra = np.broadcast_to(Ra[:, :, np.newaxis], (len(doy), len(lat_vals), n_lons))
+
     # Mean temperature
-    tas = (tasmin + tasmax) / 2
+    tas = (tasmin.values + tasmax.values) / 2
 
     # Temperature range
-    tr = tasmax - tasmin
-    tr = tr.clip(min=0)
-
-    # Day of year
-    doy = tasmin.time.dt.dayofyear
-
-    # Extraterrestrial radiation (Ra) in mm/day equivalent
-    Ra = _extraterrestrial_radiation(lat, doy)
+    tr = np.maximum(tasmax.values - tasmin.values, 0)
 
     # Hargreaves equation
     # PET = 0.0023 * Ra * (T + 17.8) * sqrt(TR)
-    pet = 0.0023 * Ra * (tas + 17.8) * np.sqrt(tr)
-    pet = pet.clip(min=0)
+    pet_values = 0.0023 * Ra * (tas + 17.8) * np.sqrt(tr)
+    pet_values = np.maximum(pet_values, 0)
+
+    # Rebuild DataArray
+    pet = xr.DataArray(
+        pet_values,
+        dims=tasmin.dims,
+        coords=tasmin.coords,
+    )
+
+    print(f"    Done in {_time.time() - _start:.1f}s")
 
     pet.attrs = {"units": "mm/day", "long_name": "Potential Evapotranspiration (Hargreaves)"}
     return pet
@@ -153,21 +184,159 @@ def calc_pet_penman_monteith(
     xr.DataArray
         PET in mm/day
     """
-    # Unit conversions
-    tas = convert_temp_units(tas)
-    tasmin = convert_temp_units(tasmin)
-    tasmax = convert_temp_units(tasmax)
-
     if lat is None:
         lat = tas.lat
+    lat_vals = lat.values
+    
+    # Precompute Ra lookup table ONCE (366 days x n_lats)
+    print("  Precomputing Ra lookup table...")
+    _start = _time.time()
+    Ra_lookup = _precompute_ra_lookup(lat_vals)  # Shape: (366, n_lats)
+    print(f"    Done in {_time.time() - _start:.1f}s")
 
-    if ps is None:
-        ps = xr.ones_like(tas) * 101325.0  # Standard pressure in Pa
+    # Get coordinates for output
+    coords = tas.coords
+    dims = tas.dims
+    n_times = len(tas.time)
+    n_lats = len(lat_vals)
+    n_lons = len(tas.lon)
+    
+    # Process in yearly chunks to manage memory
+    years = np.unique(tas.time.dt.year.values)
+    pet_chunks = []
+    
+    print(f"  Processing {len(years)} years...")
+    _total_start = _time.time()
+    
+    for i, year in enumerate(years):
+        _start = _time.time()
+        
+        # Select year
+        year_mask = tas.time.dt.year == year
+        
+        # Load just this year into memory
+        tas_y = convert_temp_units(tas.sel(time=year_mask)).values
+        tasmin_y = convert_temp_units(tasmin.sel(time=year_mask)).values
+        tasmax_y = convert_temp_units(tasmax.sel(time=year_mask)).values
+        rsds_y = rsds.sel(time=year_mask).values
+        hurs_y = hurs.sel(time=year_mask).values
+        sfcwind_y = sfcwind.sel(time=year_mask).values
+        
+        if ps is not None:
+            ps_y = ps.sel(time=year_mask).values
+        else:
+            ps_y = np.full_like(tas_y, 101325.0)
+        
+        # Get doy for this year
+        doy_y = tas.sel(time=year_mask).time.dt.dayofyear.values
+        n_days = len(doy_y)
+        
+        # Get Ra from lookup and broadcast to (n_days, n_lats, n_lons)
+        Ra_y = Ra_lookup[doy_y - 1, :]  # (n_days, n_lats)
+        Ra_y = np.broadcast_to(Ra_y[:, :, np.newaxis], (n_days, n_lats, n_lons))
+        
+        # Compute PET for this year (all numpy, fast)
+        pet_y = _compute_penman_numpy(
+            tas_y, tasmin_y, tasmax_y, rsds_y, hurs_y, sfcwind_y, ps_y, Ra_y
+        )
+        
+        pet_chunks.append(pet_y)
+        
+        elapsed = _time.time() - _start
+        print(f"    Year {year} ({i+1}/{len(years)}): {elapsed:.1f}s")
+    
+    # Concatenate all years
+    print("  Concatenating results...")
+    pet_values = np.concatenate(pet_chunks, axis=0)
+    
+    # Rebuild DataArray
+    pet = xr.DataArray(
+        pet_values,
+        dims=dims,
+        coords=coords,
+    )
+    
+    print(f"  Total time: {_time.time() - _total_start:.1f}s")
 
+    pet.attrs = {"units": "mm/day", "long_name": "Potential Evapotranspiration (FAO-56 Penman-Monteith)"}
+    return pet
+
+
+def _precompute_ra_lookup(lat_vals: np.ndarray) -> np.ndarray:
+    """
+    Precompute extraterrestrial radiation for all days of year and latitudes.
+    
+    Parameters
+    ----------
+    lat_vals : np.ndarray
+        1D array of latitude values
+        
+    Returns
+    -------
+    np.ndarray
+        Ra lookup table, shape (366, n_lats), in mm/day
+    """
+    Gsc = 0.0820  # Solar constant MJ/m²/min
+    
+    # Create lookup for days 1-366
+    doy = np.arange(1, 367)  # (366,)
+    
+    # Latitude in radians
+    lat_rad = np.deg2rad(lat_vals)  # (n_lats,)
+    
+    # Solar declination for each day
+    decl = 0.409 * np.sin(2 * np.pi * doy / 365 - 1.39)  # (366,)
+    
+    # Sunset hour angle: need to broadcast (366,) x (n_lats,)
+    # arccos_arg[d, l] = -tan(lat_rad[l]) * tan(decl[d])
+    arccos_arg = -np.outer(np.tan(decl), np.tan(lat_rad))  # (366, n_lats)
+    arccos_arg = np.clip(arccos_arg, -1.0, 1.0)
+    ws = np.arccos(arccos_arg)  # (366, n_lats)
+    
+    # Relative distance Earth-Sun
+    dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365)  # (366,)
+    
+    # Extraterrestrial radiation
+    # Ra[d, l] = f(dr[d], ws[d,l], lat_rad[l], decl[d])
+    sin_lat = np.sin(lat_rad)  # (n_lats,)
+    cos_lat = np.cos(lat_rad)  # (n_lats,)
+    sin_decl = np.sin(decl)  # (366,)
+    cos_decl = np.cos(decl)  # (366,)
+    
+    # Broadcast multiplication
+    # term1[d, l] = ws[d, l] * sin_lat[l] * sin_decl[d]
+    term1 = ws * sin_lat[np.newaxis, :] * sin_decl[:, np.newaxis]
+    # term2[d, l] = cos_lat[l] * cos_decl[d] * sin(ws[d, l])
+    term2 = cos_lat[np.newaxis, :] * cos_decl[:, np.newaxis] * np.sin(ws)
+    
+    Ra = (24 * 60 / np.pi) * Gsc * dr[:, np.newaxis] * (term1 + term2)
+    
+    # Convert MJ/m²/day to mm/day
+    Ra_mm = Ra / 2.45
+    
+    return Ra_mm.astype(np.float32)
+
+
+def _compute_penman_numpy(
+    tas: np.ndarray,
+    tasmin: np.ndarray,
+    tasmax: np.ndarray,
+    rsds: np.ndarray,
+    hurs: np.ndarray,
+    sfcwind: np.ndarray,
+    ps: np.ndarray,
+    Ra: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute Penman-Monteith PET using pure numpy (fast).
+    
+    All inputs should be numpy arrays with shape (n_times, n_lats, n_lons).
+    Ra is precomputed extraterrestrial radiation in mm/day.
+    """
     # Convert pressure Pa -> kPa
     P = ps / 1000.0
 
-    # Wind speed: 10m -> 2m (logarithmic profile)
+    # Wind speed: 10m -> 2m
     u2 = sfcwind * (4.87 / np.log(67.8 * 10 - 5.42))
 
     # Psychrometric constant (kPa/°C)
@@ -184,68 +353,50 @@ def calc_pet_penman_monteith(
     # Slope of saturation vapor pressure curve (kPa/°C)
     delta = 4098 * es / ((tas + 237.3) ** 2)
 
-    # Net radiation calculation
-    doy = tas.time.dt.dayofyear
-    Rn = _net_radiation(rsds, tas, ea, lat, doy)
-
-    # Soil heat flux (assume 0 for daily)
-    G = 0
+    # Net radiation
+    Rs = rsds * 0.0864  # W/m² to MJ/m²/day
+    Ra_mj = Ra * 2.45  # mm/day back to MJ/m²/day
+    Rso = np.maximum(0.75 * Ra_mj, 1e-6)  # Clear-sky radiation
+    
+    Rns = (1 - 0.23) * Rs  # Net shortwave
+    
+    # Net longwave
+    sigma = 4.903e-9
+    tas_k = tas + 273.16
+    cloud_factor = np.clip(1.35 * np.clip(Rs / Rso, 0.25, 1.0) - 0.35, 0, 1)
+    humidity_factor = 0.34 - 0.14 * np.sqrt(np.maximum(ea, 0))
+    Rnl = sigma * (tas_k ** 4) * humidity_factor * cloud_factor
+    
+    Rn = Rns - Rnl
 
     # FAO-56 Penman-Monteith equation
-    # Reference: Allen et al. (1998) FAO Irrigation and Drainage Paper 56
-    numerator = 0.408 * delta * (Rn - G) + gamma * (900 / (tas + 273)) * u2 * (es - ea)
+    numerator = 0.408 * delta * Rn + gamma * (900 / (tas + 273)) * u2 * (es - ea)
     denominator = delta + gamma * (1 + 0.34 * u2)
 
     pet = numerator / denominator
-    pet = pet.clip(min=0)
+    pet = np.maximum(pet, 0)
 
-    pet.attrs = {"units": "mm/day", "long_name": "Potential Evapotranspiration (FAO-56 Penman-Monteith)"}
-    return pet
+    return pet.astype(np.float32)
 
 
 def _extraterrestrial_radiation(lat: xr.DataArray, doy: xr.DataArray) -> xr.DataArray:
     """
     Calculate extraterrestrial radiation (Ra).
-
-    Parameters
-    ----------
-    lat : xr.DataArray
-        Latitude in degrees
-    doy : xr.DataArray
-        Day of year
-
-    Returns
-    -------
-    xr.DataArray
-        Ra in mm/day equivalent
+    
+    Note: For better performance, use _precompute_ra_lookup() instead.
     """
-    # Solar constant
     Gsc = 0.0820  # MJ/m²/min
-
-    # Convert latitude to radians
     lat_rad = np.deg2rad(lat)
-
-    # Solar declination
     decl = 0.409 * np.sin(2 * np.pi * doy / 365 - 1.39)
-
-    # Sunset hour angle
-    # Clip argument to [-1, 1] to avoid NaN from numerical precision at high latitudes
     arccos_arg = -np.tan(lat_rad) * np.tan(decl)
     arccos_arg = np.clip(arccos_arg, -1.0, 1.0)
     ws = np.arccos(arccos_arg)
-
-    # Relative distance Earth-Sun
     dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365)
-
-    # Extraterrestrial radiation (MJ/m²/day)
     Ra = (24 * 60 / np.pi) * Gsc * dr * (
         ws * np.sin(lat_rad) * np.sin(decl) +
         np.cos(lat_rad) * np.cos(decl) * np.sin(ws)
     )
-
-    # Convert MJ/m²/day to mm/day (latent heat of vaporization ~2.45 MJ/kg)
     Ra_mm = Ra / 2.45
-
     return Ra_mm
 
 
@@ -258,52 +409,19 @@ def _net_radiation(
 ) -> xr.DataArray:
     """
     Calculate net radiation (Rn) for Penman-Monteith.
-
-    Parameters
-    ----------
-    rsds : xr.DataArray
-        Downwelling shortwave radiation (W/m²)
-    tas : xr.DataArray
-        Air temperature (°C)
-    ea : xr.DataArray
-        Actual vapor pressure (kPa)
-    lat : xr.DataArray
-        Latitude
-    doy : xr.DataArray
-        Day of year
-
-    Returns
-    -------
-    xr.DataArray
-        Net radiation in MJ/m²/day
+    
+    Note: For better performance, use _compute_penman_numpy() instead.
     """
-    # Convert W/m² to MJ/m²/day
-    Rs = rsds * 0.0864  # W/m² * 86400 s/day / 1e6 = MJ/m²/day
-
-    # Extraterrestrial radiation
-    Ra = _extraterrestrial_radiation(lat, doy) * 2.45  # Convert back to MJ/m²/day
-
-    # Clear-sky radiation (simplified)
-    Rso = 0.75 * Ra
-
-    # Net shortwave radiation (albedo = 0.23 for reference crop)
+    Rs = rsds * 0.0864
+    Ra = _extraterrestrial_radiation(lat, doy) * 2.45
+    Rso = np.maximum(0.75 * Ra, 1e-6)
     Rns = (1 - 0.23) * Rs
-
-    # Net longwave radiation (Stefan-Boltzmann)
-    sigma = 4.903e-9  # MJ/K⁴/m²/day
+    sigma = 4.903e-9
     tas_k = tas + 273.16
-
-    # Cloudiness factor
     cloud_factor = 1.35 * (Rs / Rso).clip(min=0.25, max=1.0) - 0.35
-
-    # Humidity factor
-    humidity_factor = 0.34 - 0.14 * np.sqrt(ea)
-
+    humidity_factor = 0.34 - 0.14 * np.sqrt(np.maximum(ea, 0))
     Rnl = sigma * (tas_k ** 4) * humidity_factor * cloud_factor
-
-    # Net radiation
     Rn = Rns - Rnl
-
     return Rn
 
 

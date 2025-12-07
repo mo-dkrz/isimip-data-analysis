@@ -13,12 +13,14 @@ def load_data(
     chunks: Optional[dict] = None,
 ) -> xr.DataArray:
     """
-    Load NetCDF data from glob pattern.
+    Load NetCDF data from glob pattern(s).
 
     Parameters
     ----------
     pattern : str
-        Glob pattern for input files (e.g., '/path/to/pr/*.nc')
+        Glob pattern(s) for input files. Supports:
+        - Single pattern: '/path/to/pr/*.nc'
+        - Multiple patterns (comma-separated): '/path1/pr*.nc,/path2/pr*.nc'
     variable : str, optional
         Variable name to extract. If None, uses first data variable.
     chunks : dict, optional
@@ -29,11 +31,22 @@ def load_data(
     xr.DataArray
         Loaded data array
     """
-    files = sorted(glob.glob(pattern))
-    if not files:
-        raise FileNotFoundError(f"No files found matching pattern: {pattern}")
+    patterns = [p.strip() for p in pattern.split(',')]
+    files = []
+    for p in patterns:
+        matched = sorted(glob.glob(p))
+        if not matched:
+            print(f"  Warning: No files found for pattern: {p}")
+        files.extend(matched)
 
-    # opening managed by dask if chunks provided
+    if not files:
+        raise FileNotFoundError(f"No files found matching pattern(s): {pattern}")
+
+    # Sort all files to ensure correct time ordering
+    files = sorted(files)
+    print(f"  Found {len(files)} files")
+
+    # Open dataset - use native file chunking or no chunking
     if chunks is None:
         ds = xr.open_mfdataset(files, combine="by_coords")
     elif chunks == 'auto':
@@ -146,7 +159,7 @@ def save_netcdf(
     complevel: int = 4,
 ) -> None:
     """
-    Save dataset to NetCDF.
+    Save dataset to NetCDF with CF conventions.
 
     Parameters
     ----------
