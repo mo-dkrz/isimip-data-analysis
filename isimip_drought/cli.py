@@ -35,7 +35,7 @@ def main():
 @click.option(
     "--precip", "-p",
     required=True,
-    help="Glob pattern for precipitation files (e.g., '/path/to/pr/*.nc')"
+    help="Glob pattern(s) for precipitation files. Use comma to combine: '/hist/pr*.nc,/ssp585/pr*.nc'"
 )
 @click.option(
     "--scales", "-s",
@@ -57,13 +57,16 @@ def main():
 @click.option(
     "--chunks",
     default=None,
-    help="Dask chunks as 'lat:50,lon:50' (default: time:-1,lat:50,lon:50)"
+    help="Dask chunks as 'lat:50,lon:50' (default: auto)"
 )
 def spi(precip, scales, out, calibration, chunks):
     """Compute Standardized Precipitation Index (SPI).
 
     Example:
         isimip-drought spi -p '/data/pr/*.nc' -s 3 -s 6 -s 12 -o spi.nc
+    
+    Combine historical + future:
+        isimip-drought spi -p '/hist/pr*.nc,/ssp585/pr*.nc' -s 3 -c 1991-2020 -o spi.nc
     """
     cal_period = parse_calibration_period(calibration)
     chunk_dict = _parse_chunks(chunks)
@@ -81,7 +84,7 @@ def spi(precip, scales, out, calibration, chunks):
 @click.option(
     "--precip", "-p",
     required=True,
-    help="Glob pattern for precipitation files (e.g., '/path/to/pr/*.nc')"
+    help="Glob pattern(s) for precipitation files (comma-separated for multiple)"
 )
 @click.option(
     "--scales", "-s",
@@ -103,7 +106,7 @@ def spi(precip, scales, out, calibration, chunks):
 @click.option(
     "--pet",
     default=None,
-    help="Glob pattern for pre-computed PET files"
+    help="Glob pattern(s) for pre-computed PET files"
 )
 @click.option(
     "--pet-method",
@@ -159,14 +162,14 @@ def spei(precip, scales, out, calibration, pet, pet_method,
 @click.option(
     "--precip", "-p",
     required=True,
-    help="Glob pattern for precipitation files (e.g., '/path/to/pr/*.nc')"
+    help="Glob pattern for precipitation files"
 )
 @click.option(
     "--scales", "-s",
     required=True,
     multiple=True,
     type=int,
-    help="Rolling window periods in months (e.g., -s 6 -s 12)"
+    help="Rolling window periods in months"
 )
 @click.option(
     "--out", "-o",
@@ -229,13 +232,13 @@ def mcwd(precip, scales, out, et_fixed, pet, reset_month, chunks):
     required=True,
     help="Output NetCDF file path"
 )
-@click.option("--tas", default=None, help="Glob pattern for mean temperature files e.g., '/path/to/tas/*.nc'")
-@click.option("--tasmin", default=None, help="Glob pattern for min temperature files e.g., '/path/to/tasmin/*.nc'")
-@click.option("--tasmax", default=None, help="Glob pattern for max temperature files e.g., '/path/to/tasmax/*.nc'")
-@click.option("--hurs", default=None, help="Glob pattern for relative humidity files e.g., '/path/to/hurs/*.nc'")
-@click.option("--rsds", default=None, help="Glob pattern for shortwave radiation files e.g., '/path/to/rsds/*.nc'")
-@click.option("--sfcwind", default=None, help="Glob pattern for wind speed files e.g., '/path/to/sfcwind/*.nc'")
-@click.option("--ps", default=None, help="Glob pattern for surface pressure files e.g., '/path/to/ps/*.nc'")
+@click.option("--tas", default=None, help="Glob pattern for mean temperature")
+@click.option("--tasmin", default=None, help="Glob pattern for min temperature")
+@click.option("--tasmax", default=None, help="Glob pattern for max temperature")
+@click.option("--hurs", default=None, help="Glob pattern for relative humidity")
+@click.option("--rsds", default=None, help="Glob pattern for shortwave radiation")
+@click.option("--sfcwind", default=None, help="Glob pattern for wind speed")
+@click.option("--ps", default=None, help="Glob pattern for surface pressure")
 @click.option("--chunks", default=None, help="Dask chunks as 'lat:50,lon:50'")
 def pet(method, out, tas, tasmin, tasmax, hurs, rsds, sfcwind, ps, chunks):
     """Compute Potential Evapotranspiration (PET).
@@ -312,7 +315,6 @@ def pet(method, out, tas, tasmin, tasmax, hurs, rsds, sfcwind, ps, chunks):
 def _parse_chunks(chunks_str):
     """Parse chunk string like 'lat:50,lon:50' to dict, or None for auto."""
     if not chunks_str or chunks_str.lower() == 'auto':
-        # xarray auto detect
         return None
 
     chunk_dict = {}
