@@ -6,8 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=48:00:00
 #SBATCH --output=drought_%j.log
+#SBATCH --error=drought_-%j.err
 
 # =============================================================================
 # ISIMIP Drought Indices - HPC Production Script
