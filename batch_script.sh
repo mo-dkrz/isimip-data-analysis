@@ -95,8 +95,8 @@ for MODEL_PAIR in "${MODELS[@]}"; do
         echo "=============================================="
 
         # Paths
-        HIST_DIR="${DATA_BASE}/historical/${MODEL_UPPER}"
-        FUT_DIR="${DATA_BASE}/${SCENARIO}/${MODEL_UPPER}"
+        HIST_DIR="${DATA_BASE}/historical/${MODEL_UPPER}_conus"
+        FUT_DIR="${DATA_BASE}/${SCENARIO}/${MODEL_UPPER}_conus"
         OUTPUT_DIR="${OUTPUT_BASE}/${MODEL}_${SCENARIO}"
         mkdir -p "${OUTPUT_DIR}"
 
