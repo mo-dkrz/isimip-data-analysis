@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=drought_indices
-#SBATCH --partition=compute
+#SBATCH --qos=short
 #SBATCH --account=ai
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
