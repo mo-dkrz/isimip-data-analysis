@@ -36,7 +36,7 @@ SCENARIOS=(
 )
 
 # Calibration period
-CAL_START=1901
+CAL_START=1979
 CAL_END=2014
 
 # Scales
@@ -88,7 +88,7 @@ for MODEL_PAIR in "${MODELS[@]}"; do
 
     for SCENARIO in "${SCENARIOS[@]}"; do
         CURRENT=$((CURRENT + 1))
-        
+
         echo ""
         echo "=============================================="
         echo "[${CURRENT}/${TOTAL}] ${MODEL_UPPER} / ${SCENARIO}"
@@ -101,14 +101,14 @@ for MODEL_PAIR in "${MODELS[@]}"; do
         mkdir -p "${OUTPUT_DIR}"
 
         # File patterns
-        PR="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_pr*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_pr*.nc"
-        TAS="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_tas_*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_tas_*.nc"
-        TASMIN="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_tasmin*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_tasmin*.nc"
-        TASMAX="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_tasmax*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_tasmax*.nc"
-        HURS="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_hurs*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_hurs*.nc"
-        RSDS="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_rsds*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_rsds*.nc"
-        SFCWIND="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_sfcwind*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_sfcwind*.nc"
-        PS="${HIST_DIR}/${MODEL}_r1i1p1f1_w5e5_historical_ps*.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5_${SCENARIO}_ps*.nc"
+        PR="${HIST_DIR}/${MODEL}_w5e5_historical_pr.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_pr*.nc"
+        TAS="${HIST_DIR}/${MODEL}_w5e5_historical_tas.nc,${FUT_DIR}/${MODEL}r1i1p1f1_w5e5${SCENARIO}tas*.nc"
+        TASMIN="${HIST_DIR}/${MODEL}_w5e5_historical_tasmin.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_tasmin*.nc"
+        TASMAX="${HIST_DIR}/${MODEL}_w5e5_historical_tasmax.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_tasmax*.nc"
+        HURS="${HIST_DIR}/${MODEL}_w5e5_historical_hurs.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_hurs*.nc"
+        RSDS="${HIST_DIR}/${MODEL}_w5e5_historical_rsds.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_rsds*.nc"
+        SFCWIND="${HIST_DIR}/${MODEL}_w5e5_historical_sfcwind.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_sfcwind*.nc"
+        PS="${HIST_DIR}/${MODEL}_w5e5_historical_ps.nc,${FUT_DIR}/${MODEL}_r1i1p1f1_w5e5${SCENARIO}_ps*.nc"
 
         # Output files
         PET_FILE="${OUTPUT_DIR}/pet_penman_${MODEL}_${SCENARIO}.nc"
