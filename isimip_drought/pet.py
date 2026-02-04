@@ -15,6 +15,59 @@ import xarray as xr
 from .utils import convert_temp_units
 
 
+def _thornthwaite_day_correction(lat, month, days_in_month):
+    """
+    Calculate Thornthwaite day-length correction factor using sunset hour angle.
+
+    Based on standard solar geometry: N = (24/pi) * Omegas
+    where Omegas = arccos(-tan phi tan omega) is the sunset hour angle.
+
+    Parameters
+    ----------
+    lat : xr.DataArray
+        Latitude coordinate
+    month : xr.DataArray
+        Month of year (1-12)
+    days_in_month : xr.DataArray
+        Number of days in each month
+
+    Returns
+    -------
+    xr.DataArray
+        Correction factor
+    """
+    import xarray as xr
+
+    # Convert latitude to radians
+    lat_rad = np.deg2rad(lat)
+
+    # Day of year at mid-month (15th day)
+    # Approximate: Jan 15, Feb 15, etc.
+    mid_month_doy = (month - 1) * 30.5 + 15
+
+    # Solar declination (radians) using standard formula
+    # omega = 0.409 * sin(2pi * J/365 - 1.39)
+    # where J is day of year
+    decl = 0.409 * np.sin(2 * np.pi * mid_month_doy / 365 - 1.39)
+
+    # Sunset hour angle: Omegas = arccos(-tan phi tan omega)
+    # Handle polar cases where sun doesn't set/rise
+    cos_arg = -np.tan(lat_rad) * np.tan(decl)
+    cos_arg = np.clip(cos_arg, -1.0, 1.0)  # Keep within valid arccos range
+    omega_s = np.arccos(cos_arg)
+
+    # Day length in hours: N = (24/pi) * Omegas
+    N = (24 / np.pi) * omega_s
+
+    # Thornthwaite correction factor
+    # = (N/12) * (days_in_month/30)
+    # where N/12 adjusts for actual vs standard (12hr) day length
+    # and days_in_month/30 adjusts for month length
+    correction = (N / 12) * (days_in_month / 30)
+
+    return correction
+
+
 def calc_pet_thornthwaite(tas: xr.DataArray) -> xr.DataArray:
     """
     Calculate PET using Thornthwaite method.
@@ -56,10 +109,16 @@ def calc_pet_thornthwaite(tas: xr.DataArray) -> xr.DataArray:
     # Unadjusted PET (mm/month for 30-day month, 12-hour days)
     pet_unadj = 16 * ((10 * tas_pos / I) ** a)
 
-    # Day length correction factor (simplified, based on latitude)
-    # Using 12 hours as baseline - for more accuracy, would need latitude
+    # Day length correction factor (proper latitude-based)
+    lat = tas.lat
+    month = tas.time.dt.month
     days_in_month = tas.time.dt.days_in_month
-    pet = pet_unadj * (days_in_month / 30)
+
+    # Calculate mean day length for each month and latitude
+    # Using lookup table approach for efficiency
+    correction_factor = _thornthwaite_day_correction(lat, month, days_in_month)
+
+    pet = pet_unadj * correction_factor
 
     # Set negative temps to 0 PET
     pet = pet.where(tas > 0, 0)

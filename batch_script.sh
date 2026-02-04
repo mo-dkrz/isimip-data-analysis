@@ -133,19 +133,19 @@ for MODEL_PAIR in "${MODELS[@]}"; do
                 --out "${PET_FILE}"
         fi
 
-        # Step 2: SPI
-        echo "  SPI..."
-        if [ -f "${SPI_FILE}" ]; then
-            echo "    + exists, skipping"
-        else
-            SCALE_ARGS=""
-            for s in ${SPI_SCALES}; do SCALE_ARGS="${SCALE_ARGS} -s ${s}"; done
-            isimip-drought spi \
-                --precip "${PR}" \
-                ${SCALE_ARGS} \
-                --calibration "${CALIBRATION}" \
-                --out "${SPI_FILE}"
-        fi
+        # # Step 2: SPI
+        # echo "  SPI..."
+        # if [ -f "${SPI_FILE}" ]; then
+        #     echo "    + exists, skipping"
+        # else
+        #     SCALE_ARGS=""
+        #     for s in ${SPI_SCALES}; do SCALE_ARGS="${SCALE_ARGS} -s ${s}"; done
+        #     isimip-drought spi \
+        #         --precip "${PR}" \
+        #         ${SCALE_ARGS} \
+        #         --calibration "${CALIBRATION}" \
+        #         --out "${SPI_FILE}"
+        # fi
 
         # Step 3: SPEI
         echo "  SPEI..."
@@ -162,20 +162,20 @@ for MODEL_PAIR in "${MODELS[@]}"; do
                 --out "${SPEI_FILE}"
         fi
 
-        # Step 4: MCWD
-        echo "  MCWD..."
-        if [ -f "${MCWD_FILE}" ]; then
-            echo "    + exists, skipping"
-        else
-            SCALE_ARGS=""
-            for s in ${MCWD_SCALES}; do SCALE_ARGS="${SCALE_ARGS} -s ${s}"; done
-            isimip-drought mcwd \
-                --precip "${PR}" \
-                --pet "${PET_FILE}" \
-                ${SCALE_ARGS} \
-                --reset-month ${MCWD_RESET_MONTH} \
-                --out "${MCWD_FILE}"
-        fi
+        # # Step 4: MCWD
+        # echo "  MCWD..."
+        # if [ -f "${MCWD_FILE}" ]; then
+        #     echo "    + exists, skipping"
+        # else
+        #     SCALE_ARGS=""
+        #     for s in ${MCWD_SCALES}; do SCALE_ARGS="${SCALE_ARGS} -s ${s}"; done
+        #     isimip-drought mcwd \
+        #         --precip "${PR}" \
+        #         --pet "${PET_FILE}" \
+        #         ${SCALE_ARGS} \
+        #         --reset-month ${MCWD_RESET_MONTH} \
+        #         --out "${MCWD_FILE}"
+        # fi
 
         echo "  + Done: ${MODEL}_${SCENARIO}"
 

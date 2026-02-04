@@ -111,8 +111,8 @@ def spi(precip, scales, out, calibration, chunks):
 @click.option(
     "--pet-method",
     type=click.Choice(["thornthwaite", "hargreaves", "penman"]),
-    default="hargreaves",
-    help="PET calculation method (default: hargreaves)"
+    default="penman",
+    help="PET calculation method (default: penman = FAO-56 Penman-Monteith)"
 )
 @click.option("--tas", default=None, help="Glob pattern for mean temperature files e.g., '/path/to/tas/*.nc'")
 @click.option("--tasmin", default=None, help="Glob pattern for min temperature files e.g., '/path/to/tasmin/*.nc'")
@@ -122,8 +122,9 @@ def spi(precip, scales, out, calibration, chunks):
 @click.option("--sfcwind", default=None, help="Glob pattern for wind speed files e.g., '/path/to/sfcwind/*.nc'")
 @click.option("--ps", default=None, help="Glob pattern for surface pressure files e.g., '/path/to/ps/*.nc'")
 @click.option("--chunks", default=None, help="Dask chunks as 'lat:50,lon:50'")
+@click.option("--include-wb/--no-include-wb", default=True, help="Include water balance (P-PET) in output (default: include)")
 def spei(precip, scales, out, calibration, pet, pet_method,
-         tas, tasmin, tasmax, hurs, rsds, sfcwind, ps, chunks):
+         tas, tasmin, tasmax, hurs, rsds, sfcwind, ps, chunks, include_wb):
     """Compute Standardized Precipitation Evapotranspiration Index (SPEI).
 
     PET can be provided directly with --pet, or calculated using one of:
@@ -155,6 +156,7 @@ def spei(precip, scales, out, calibration, pet, pet_method,
         sfcwind_pattern=sfcwind,
         ps_pattern=ps,
         chunks=chunk_dict,
+        include_water_balance=include_wb,
     )
 
 
